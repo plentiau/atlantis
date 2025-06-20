@@ -27,6 +27,7 @@ env:
   AWS_REGION: ap-southeast-2
   ECR_REPO_URL: 028287609508.dkr.ecr.ap-southeast-2.amazonaws.com
   DOCKER_IMAGE_NAME: buildtools/atlantis
+  AWS_INFRA_ACCOUNT_ID: 028287609508
 
 jobs:
   build:
@@ -100,7 +101,7 @@ jobs:
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
       with:
-        registries: "162555222078"
+        registries: ${{ env.AWS_INFRA_ACCOUNT_ID }}
 
     # Publish release to container registry
     - name: Populate release version
