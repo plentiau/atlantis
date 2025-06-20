@@ -4,13 +4,13 @@ on:
   push:
     branches:
       - 'main'
-      - 'release-**'
+      - 'release/*'
     tags:
       - v*.*.*
   pull_request:
     branches:
       - 'main'
-      - 'release-**'
+      - 'release/*'
     types:
       - opened
       - reopened
@@ -21,6 +21,12 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
+
+env:
+  GITHUB_ACTIONS_ECR_ROLE_ARN: arn:aws:iam::028287609508:role/pipeline-atlantis-role
+  AWS_REGION: ap-southeast-2
+  ECR_REPO_URL: 028287609508.dkr.ecr.ap-southeast-2.amazonaws.com
+  DOCKER_IMAGE_NAME: buildtools/atlantis
 
 jobs:
   changes:
@@ -55,8 +61,6 @@ jobs:
         image_type: [alpine, debian]
     runs-on: ubuntu-24.04
     env:
-      # Set docker repo to either the fork or the main repo where the branch exists
-      DOCKER_REPO: ghcr.io/${{ github.repository }}
       # Push if not a pull request and references the main branch
       PUSH: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
 
@@ -95,7 +99,7 @@ jobs:
         SUFFIX: ${{ format('-{0}', matrix.image_type) }}
       with:
         images: |
-          ${{ env.DOCKER_REPO }}
+          ${{ env.ECR_REPO_URL }}/${{ env.DOCKER_IMAGE_NAME }}
         labels: |
           org.opencontainers.image.authors="@runatlantis Github Org"
           org.opencontainers.image.licenses=Apache-2.0
@@ -104,36 +108,32 @@ jobs:
           type=semver,pattern={{version}},prefix=v,suffix=${{ env.SUFFIX }}
           type=semver,pattern={{version}},prefix=v,enable=${{ matrix.image_type == 'alpine' }}
           type=semver,pattern={{major}}.{{minor}},prefix=v,suffix=${{ env.SUFFIX }}
-          # dev
-          type=raw,event=push,value=dev,enable={{is_default_branch}},suffix=${{ env.SUFFIX }}
-          type=raw,event=push,value=dev,enable={{is_default_branch}},suffix=${{ env.SUFFIX }}-{{ sha }}
-          type=raw,event=push,value=dev,enable=${{ github.ref == format('refs/heads/{0}', 'main') && matrix.image_type == 'alpine' }},suffix=
-          # prerelease
-          type=raw,event=tag,value=prerelease-latest,enable=${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, 'pre') && matrix.image_type == 'alpine' }},suffix=
-          type=raw,event=tag,value=prerelease-latest,enable=${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, 'pre') }},suffix=${{ env.SUFFIX }}
           # latest
           type=raw,event=tag,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'pre') && matrix.image_type == 'alpine' }},suffix=
           type=raw,event=tag,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'pre') }},suffix=${{ env.SUFFIX }}
-          # pr
-          type=ref,event=pr,suffix=${{ env.SUFFIX }}
         flavor: |
           # This is disabled here so we can use the raw form above
           latest=false
           # Suffix is not used here since there's no way to disable it above
 
-    - name: Login to Packages Container registry
-      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        role-to-assume: ${{ env.GITHUB_ACTIONS_ECR_ROLE_ARN }}
+        role-session-name: github_ecr_role_session
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        registries: "162555222078"
 
     # Publish release to container registry
     - name: Populate release version
       if: contains(fromJson('["push", "pull_request"]'), github.event_name)
       run: echo "RELEASE_VERSION=${{ startsWith(github.ref, 'refs/tags/') && '${GITHUB_REF#refs/*/}' || 'dev' }}" >> $GITHUB_ENV
 
-    - name: "Build ${{ env.PUSH == 'true' && 'and push' || '' }} ${{ env.DOCKER_REPO }} image"
+    - name: "Build ${{ env.PUSH == 'true' && 'and push' || '' }} ${{ env.ECR_REPO_URL }}/${{ env.DOCKER_IMAGE_NAME }} image"
       id: build
       if: contains(fromJson('["push", "pull_request"]'), github.event_name)
       uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6
@@ -169,9 +169,6 @@ jobs:
     strategy:
       matrix:
         image_type: [alpine, debian]
-    env:
-      # Set docker repo to either the fork or the main repo where the branch exists
-      DOCKER_REPO: ghcr.io/${{ github.repository }}
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -194,7 +191,7 @@ jobs:
             ATLANTIS_BASE_TAG_TYPE=${{ matrix.image_type }}
           push: false
           load: true
-          tags: "${{ env.DOCKER_REPO }}:goss-test"
+          tags: "${{ env.ECR_REPO_URL }}/${{ env.DOCKER_IMAGE_NAME }}:goss-test"
           target: ${{ matrix.image_type }}
 
       - name: "Setup Goss"
@@ -204,7 +201,7 @@ jobs:
 
       - name: Execute Goss tests
         run: |
-          dgoss run --rm ${{ env.DOCKER_REPO }}:goss-test bash -c 'while true; do sleep 1; done;'
+          dgoss run --rm ${{ env.ECR_REPO_URL }}/${{ env.DOCKER_IMAGE_NAME }}:goss-test bash -c 'while true; do sleep 1; done;'
 
   skip-build:
     needs: [changes]
