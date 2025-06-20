@@ -27,7 +27,7 @@ env:
   AWS_REGION: ap-southeast-2
   ECR_REPO_URL: 028287609508.dkr.ecr.ap-southeast-2.amazonaws.com
   DOCKER_IMAGE_NAME: buildtools/atlantis
-  AWS_INFRA_ACCOUNT_ID: 028287609508
+  AWS_INFRA_ACCOUNT_ID: "028287609508"
 
 jobs:
   build:
