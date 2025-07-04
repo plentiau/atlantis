@@ -124,3 +124,4 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         target: ${{ matrix.image_type }}
         labels: ${{ steps.meta.outputs.labels }}
+        outputs: type=image,name=${{ steps.meta.outputs.tags }}
