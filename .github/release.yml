@@ -30,7 +30,7 @@ changelog:
     - title: Bug fixes 🐛
       labels:
         - bug
-    - title: Security changes
+    - title: Security changes :lock:
       labels:
         - security
     - title: Documentation
